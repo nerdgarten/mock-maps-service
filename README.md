@@ -200,7 +200,7 @@ Returns a mock static map image URL for UI display.
 
 ---
 
-## 🚀 Running the Server
+## Running the Server
 
 To start the gRPC server:
 
@@ -222,7 +222,7 @@ PORT=8080 go run main.go
 - `client/`: Example client for testing the service
 - `main.go`: Entry point to start the server
 
-## 🧪 Running the Client Example
+## Running the Client Example
 
 To run the example client (ensure the server is running first):
 
