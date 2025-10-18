@@ -1,0 +1,126 @@
+syntax = "proto3";
+
+package maps;
+
+option go_package = "github.com/nerdgarten/mock-maps/service/proto";
+
+message Location {
+  double lat = 1;
+  double lng = 2;
+}
+
+message Step {
+  string instruction = 1;
+  string distance = 2;
+}
+
+message Route {
+  string distance = 1;
+  string duration = 2;
+  string polyline = 3;
+  repeated Step steps = 4;
+}
+
+message Place {
+  string name = 1;
+  string address = 2;
+  Location location = 3;
+  double rating = 4;
+}
+
+message GeocodeResult {
+  string formatted_address = 1;
+  Location location = 2;
+}
+
+message DistanceElement {
+  string distance = 1;
+  string duration = 2;
+}
+
+message DistanceRow {
+  repeated DistanceElement elements = 1;
+}
+
+message OptimizedRoute {
+  repeated int32 optimized_order = 1;
+  string total_distance = 2;
+  string total_duration = 3;
+}
+
+message StaticMap {
+  string url = 1;
+}
+
+message GetDirectionsRequest {
+  Location origin = 1;
+  Location destination = 2;
+  string mode = 3;
+}
+
+message SearchPlacesRequest {
+  string query = 1;
+  Location location = 2;
+  int32 radius = 3;
+  string type = 4;
+}
+
+message SearchPlacesResponse {
+  repeated Place results = 1;
+}
+
+message GeocodeRequest {
+  string address = 1;
+}
+
+message GeocodeResponse {
+  repeated GeocodeResult results = 1;
+}
+
+message ReverseGeocodeRequest {
+  Location location = 1;
+}
+
+message ReverseGeocodeResponse {
+  string address = 1;
+}
+
+message DistanceMatrixRequest {
+  repeated Location origins = 1;
+  repeated Location destinations = 2;
+  string mode = 3;
+}
+
+message DistanceMatrixResponse {
+  repeated DistanceRow rows = 1;
+}
+
+message OptimizeRouteRequest {
+  repeated Location stops = 1;
+}
+
+message TrackRequest {
+  // empty for now
+}
+
+message TrackLocation {
+  Location location = 1;
+  string timestamp = 2;
+}
+
+message StaticMapRequest {
+  Location center = 1;
+  int32 zoom = 2;
+  string size = 3;
+}
+
+service MapsService {
+  rpc GetDirections(GetDirectionsRequest) returns (Route);
+  rpc SearchPlaces(SearchPlacesRequest) returns (SearchPlacesResponse);
+  rpc Geocode(GeocodeRequest) returns (GeocodeResponse);
+  rpc ReverseGeocode(ReverseGeocodeRequest) returns (ReverseGeocodeResponse);
+  rpc DistanceMatrix(DistanceMatrixRequest) returns (DistanceMatrixResponse);
+  rpc OptimizeRoute(OptimizeRouteRequest) returns (OptimizedRoute);
+  rpc Track(TrackRequest) returns (stream TrackLocation);
+  rpc GetStaticMap(StaticMapRequest) returns (StaticMap);
+}
