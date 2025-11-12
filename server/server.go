@@ -1,105 +1,194 @@
 package server
 
 import (
-	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"math/rand"
-	"time"
+	"net/http"
+	"strings"
 
 	"github.com/nerdgarten/mock-maps/service/data"
-	pb "github.com/nerdgarten/mock-maps/service/proto"
+	"github.com/nerdgarten/mock-maps/service/types"
 )
 
-// MapsServer implements the MapsServiceServer interface
-type MapsServer struct {
-	pb.UnimplementedMapsServiceServer
-}
+// MapsServer exposes HTTP handlers that emulate a maps API.
+type MapsServer struct{}
 
-// NewMapsServer creates a new MapsServer instance
+// NewMapsServer creates a new MapsServer instance.
 func NewMapsServer() *MapsServer {
 	return &MapsServer{}
 }
 
-// GetDirections returns mock directions
-func (s *MapsServer) GetDirections(ctx context.Context, req *pb.GetDirectionsRequest) (*pb.Route, error) {
-	log.Printf("GetDirections called with origin: %v, destination: %v, mode: %s", req.Origin, req.Destination, req.Mode)
-	route := data.GetMockRoute(req.Mode)
-	if route == nil {
-		return nil, fmt.Errorf("unsupported mode: %s", req.Mode)
+// RegisterRoutes wires all HTTP endpoints into the provided mux.
+func (s *MapsServer) RegisterRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("/directions", s.handleGetDirections)
+	mux.HandleFunc("/places/search", s.handleSearchPlaces)
+	mux.HandleFunc("/geocode", s.handleGeocode)
+	mux.HandleFunc("/reverse-geocode", s.handleReverseGeocode)
+	mux.HandleFunc("/distance-matrix", s.handleDistanceMatrix)
+	mux.HandleFunc("/optimize-route", s.handleOptimizeRoute)
+	mux.HandleFunc("/track", s.handleTrack)
+	mux.HandleFunc("/static-map", s.handleGetStaticMap)
+}
+
+func (s *MapsServer) handleGetDirections(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w)
+		return
 	}
-	return route, nil
+	var req types.GetDirectionsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request payload")
+		return
+	}
+	mode := req.Mode
+	if mode == "" {
+		mode = "driving"
+	}
+	log.Printf("REST GetDirections called with mode=%s", mode)
+	route := data.GetMockRoute(mode)
+	if route == nil {
+		writeError(w, http.StatusNotFound, "unsupported mode")
+		return
+	}
+	writeJSON(w, http.StatusOK, route)
 }
 
-// SearchPlaces returns mock places based on search criteria
-func (s *MapsServer) SearchPlaces(ctx context.Context, req *pb.SearchPlacesRequest) (*pb.SearchPlacesResponse, error) {
-	log.Printf("SearchPlaces called with query: %s, location: %v, radius: %d, type: %s", req.Query, req.Location, req.Radius, req.Type)
+func (s *MapsServer) handleSearchPlaces(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w)
+		return
+	}
+	var req types.SearchPlacesRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request payload")
+		return
+	}
+	log.Printf("REST SearchPlaces called with query=%s", req.Query)
 	places := data.GetMockPlaces(req.Query, req.Location, req.Radius, req.Type)
-	return &pb.SearchPlacesResponse{Results: places}, nil
+	writeJSON(w, http.StatusOK, types.SearchPlacesResponse{Results: places})
 }
 
-// Geocode converts address to coordinates
-func (s *MapsServer) Geocode(ctx context.Context, req *pb.GeocodeRequest) (*pb.GeocodeResponse, error) {
-	log.Printf("Geocode called with address: %s", req.Address)
+func (s *MapsServer) handleGeocode(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w)
+		return
+	}
+	var req types.GeocodeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request payload")
+		return
+	}
+	log.Printf("REST Geocode called for address=%s", req.Address)
 	result := data.GetMockGeocode(req.Address)
 	if result == nil {
-		return &pb.GeocodeResponse{Results: []*pb.GeocodeResult{}}, nil // Return empty for unknown addresses
+		writeJSON(w, http.StatusOK, types.GeocodeResponse{Results: []types.GeocodeResult{}})
+		return
 	}
-	return &pb.GeocodeResponse{Results: []*pb.GeocodeResult{result}}, nil
+	writeJSON(w, http.StatusOK, types.GeocodeResponse{Results: []types.GeocodeResult{*result}})
 }
 
-// ReverseGeocode converts coordinates to address
-func (s *MapsServer) ReverseGeocode(ctx context.Context, req *pb.ReverseGeocodeRequest) (*pb.ReverseGeocodeResponse, error) {
-	log.Printf("ReverseGeocode called with location: %v", req.Location)
+func (s *MapsServer) handleReverseGeocode(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w)
+		return
+	}
+	var req types.ReverseGeocodeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request payload")
+		return
+	}
+	log.Printf("REST ReverseGeocode called for lat=%.4f lng=%.4f", req.Location.Lat, req.Location.Lng)
 	address := data.GetMockReverseGeocode(req.Location.Lat, req.Location.Lng)
 	if address == "" {
-		address = fmt.Sprintf("%.4f, %.4f", req.Location.Lat, req.Location.Lng) // Fallback
+		address = formatFallbackAddress(req.Location)
 	}
-	return &pb.ReverseGeocodeResponse{Address: address}, nil
+	writeJSON(w, http.StatusOK, types.ReverseGeocodeResponse{Address: address})
 }
 
-// DistanceMatrix calculates distances between origins and destinations
-func (s *MapsServer) DistanceMatrix(ctx context.Context, req *pb.DistanceMatrixRequest) (*pb.DistanceMatrixResponse, error) {
-	log.Printf("DistanceMatrix called with %d origins and %d destinations", len(req.Origins), len(req.Destinations))
-	// For simplicity, return the mock data regardless of input
-	return &pb.DistanceMatrixResponse{Rows: data.MockDistanceMatrix}, nil
+func (s *MapsServer) handleDistanceMatrix(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w)
+		return
+	}
+	var req types.DistanceMatrixRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request payload")
+		return
+	}
+	log.Printf("REST DistanceMatrix called with %d origins and %d destinations", len(req.Origins), len(req.Destinations))
+	writeJSON(w, http.StatusOK, types.DistanceMatrixResponse{Rows: data.MockDistanceMatrix})
 }
 
-// OptimizeRoute optimizes the order of stops
-func (s *MapsServer) OptimizeRoute(ctx context.Context, req *pb.OptimizeRouteRequest) (*pb.OptimizedRoute, error) {
-	log.Printf("OptimizeRoute called with %d stops", len(req.Stops))
-	// Randomly select one of the mock optimized routes
+func (s *MapsServer) handleOptimizeRoute(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w)
+		return
+	}
+	var req types.OptimizeRouteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request payload")
+		return
+	}
+	log.Printf("REST OptimizeRoute called with %d stops", len(req.Stops))
+	if len(data.MockOptimizedRoutes) == 0 {
+		writeError(w, http.StatusInternalServerError, "no mock optimized routes configured")
+		return
+	}
 	index := rand.Intn(len(data.MockOptimizedRoutes))
-	return data.MockOptimizedRoutes[index], nil
+	writeJSON(w, http.StatusOK, data.MockOptimizedRoutes[index])
 }
 
-// Track streams mock location updates
-func (s *MapsServer) Track(req *pb.TrackRequest, stream pb.MapsService_TrackServer) error {
-	log.Println("Track called, starting location stream")
-	for _, loc := range data.MockTrackLocations {
-		select {
-		case <-stream.Context().Done():
-			return stream.Context().Err()
-		default:
-			if err := stream.Send(&pb.TrackLocation{
-				Location:  &pb.Location{Lat: loc.Lat, Lng: loc.Lng},
-				Timestamp: loc.Timestamp,
-			}); err != nil {
-				return err
-			}
-			time.Sleep(1 * time.Second)
-		}
+func (s *MapsServer) handleTrack(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeMethodNotAllowed(w)
+		return
 	}
-	return nil
+	log.Print("REST Track called")
+	writeJSON(w, http.StatusOK, types.TrackResponse{Locations: data.MockTrackLocations})
 }
 
-// GetStaticMap returns a mock static map URL
-func (s *MapsServer) GetStaticMap(ctx context.Context, req *pb.StaticMapRequest) (*pb.StaticMap, error) {
-	log.Printf("GetStaticMap called with center: %v, zoom: %d, size: %s", req.Center, req.Zoom, req.Size)
-	key := fmt.Sprintf("%.4f,%.4f_%d_%s", req.Center.Lat, req.Center.Lng, req.Zoom, req.Size)
+func (s *MapsServer) handleGetStaticMap(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w)
+		return
+	}
+	var req types.StaticMapRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request payload")
+		return
+	}
+	log.Printf("REST GetStaticMap called for lat=%.4f lng=%.4f zoom=%d size=%s", req.Center.Lat, req.Center.Lng, req.Zoom, req.Size)
+	key := formatStaticMapKey(req.Center.Lat, req.Center.Lng, req.Zoom, req.Size)
 	url, ok := data.MockStaticMaps[key]
 	if !ok {
-		url = "https://mockmaps.local/static/default.png" // Default fallback
+		url = "https://mockmaps.local/static/default.png"
 	}
-	return &pb.StaticMap{Url: url}, nil
+	writeJSON(w, http.StatusOK, types.StaticMap{URL: url})
+}
+
+func writeJSON(w http.ResponseWriter, status int, payload any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if err := json.NewEncoder(w).Encode(payload); err != nil {
+		log.Printf("failed to encode response: %v", err)
+	}
+}
+
+func writeError(w http.ResponseWriter, status int, message string) {
+	writeJSON(w, status, types.ErrorResponse{Error: message})
+}
+
+func writeMethodNotAllowed(w http.ResponseWriter) {
+	writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+}
+
+func formatFallbackAddress(loc types.Location) string {
+	return fmt.Sprintf("%.4f, %.4f", loc.Lat, loc.Lng)
+}
+
+func formatStaticMapKey(lat, lng float64, zoom int32, size string) string {
+	key := fmt.Sprintf("%.4f,%.4f_%d_%s", lat, lng, zoom, size)
+	return strings.TrimRight(key, "_")
 }
