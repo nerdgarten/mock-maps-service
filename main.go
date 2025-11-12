@@ -5,10 +5,16 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/joho/godotenv"
 	"github.com/nerdgarten/mock-maps/service/server"
 )
 
 func main() {
+	err := godotenv.Load(".env")
+	if err != nil {
+		log.Fatal("Error loading .env file: %s", err)
+	}
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "50051"
