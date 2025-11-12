@@ -159,3 +159,101 @@ func calculateDistance(loc1, loc2 types.Location) float64 {
 	dy := loc1.Lat - loc2.Lat
 	return math.Sqrt(dx*dx+dy*dy) * 111000
 }
+
+// GenerateMapSVG generates an SVG representation of a map with markers
+func GenerateMapSVG(center types.Location, zoom int32, width, height int32, markers []types.Marker) string {
+	// Calculate scale based on zoom (higher zoom = more detail)
+	scale := math.Pow(2, float64(zoom-10)) * 100000
+
+	// Build SVG header
+	svg := fmt.Sprintf(`<svg width="%d" height="%d" xmlns="http://www.w3.org/2000/svg">`, width, height)
+
+	// Add background (map area)
+	svg += fmt.Sprintf(`<rect width="%d" height="%d" fill="#e8f4f8"/>`, width, height)
+
+	// Add grid pattern for map feel
+	svg += `<defs><pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+		<path d="M 40 0 L 0 0 0 40" fill="none" stroke="#d0e8f0" stroke-width="1"/>
+	</pattern></defs>`
+	svg += fmt.Sprintf(`<rect width="%d" height="%d" fill="url(#grid)"/>`, width, height)
+
+	// Add some streets/paths
+	centerX := float64(width) / 2
+	centerY := float64(height) / 2
+
+	// Horizontal streets
+	for i := -2; i <= 2; i++ {
+		y := centerY + float64(i*80)
+		if y >= 0 && y <= float64(height) {
+			svg += fmt.Sprintf(`<line x1="0" y1="%.1f" x2="%d" y2="%.1f" stroke="#c4d8e0" stroke-width="3"/>`,
+				y, width, y)
+		}
+	}
+
+	// Vertical streets
+	for i := -3; i <= 3; i++ {
+		x := centerX + float64(i*80)
+		if x >= 0 && x <= float64(width) {
+			svg += fmt.Sprintf(`<line x1="%.1f" y1="0" x2="%.1f" y2="%d" stroke="#c4d8e0" stroke-width="3"/>`,
+				x, x, height)
+		}
+	}
+
+	// Add some park areas (green spaces)
+	svg += fmt.Sprintf(`<circle cx="%.1f" cy="%.1f" r="50" fill="#b8e6b8" opacity="0.6"/>`,
+		centerX-120, centerY-100)
+	svg += fmt.Sprintf(`<circle cx="%.1f" cy="%.1f" r="35" fill="#b8e6b8" opacity="0.6"/>`,
+		centerX+150, centerY+80)
+
+	// Add buildings
+	buildings := []struct{ x, y, w, h float64 }{
+		{centerX - 60, centerY - 60, 40, 40},
+		{centerX + 20, centerY - 80, 50, 50},
+		{centerX - 100, centerY + 20, 35, 35},
+		{centerX + 80, centerY - 20, 45, 45},
+	}
+
+	for _, b := range buildings {
+		if b.x >= 0 && b.x+b.w <= float64(width) && b.y >= 0 && b.y+b.h <= float64(height) {
+			svg += fmt.Sprintf(`<rect x="%.1f" y="%.1f" width="%.1f" height="%.1f" fill="#d4d4d4" stroke="#999" stroke-width="1"/>`,
+				b.x, b.y, b.w, b.h)
+		}
+	}
+
+	// Add markers
+	for _, marker := range markers {
+		// Convert lat/lng to SVG coordinates relative to center
+		dx := (marker.Location.Lng - center.Lng) * scale
+		dy := (center.Lat - marker.Location.Lat) * scale
+
+		x := centerX + dx
+		y := centerY + dy
+
+		// Only draw marker if it's within bounds
+		if x >= 0 && x <= float64(width) && y >= 0 && y <= float64(height) {
+			color := marker.Color
+			if color == "" {
+				color = "#ff4444"
+			}
+
+			// Draw pin (teardrop shape)
+			svg += fmt.Sprintf(`<g transform="translate(%.1f,%.1f)">`, x, y)
+			svg += fmt.Sprintf(`<path d="M 0,-20 C -8,-20 -15,-13 -15,-5 C -15,0 0,20 0,20 C 0,20 15,0 15,-5 C 15,-13 8,-20 0,-20 Z" fill="%s" stroke="#fff" stroke-width="2"/>`, color)
+			svg += `<circle cx="0" cy="-8" r="5" fill="#fff"/>`
+			svg += `</g>`
+
+			// Add label if provided
+			if marker.Label != "" {
+				svg += fmt.Sprintf(`<text x="%.1f" y="%.1f" text-anchor="middle" font-size="12" fill="#333" font-weight="bold">%s</text>`,
+					x, y+25, marker.Label)
+			}
+		}
+	}
+
+	// Add center indicator (small circle)
+	svg += fmt.Sprintf(`<circle cx="%.1f" cy="%.1f" r="3" fill="#4285f4" stroke="#fff" stroke-width="1"/>`,
+		centerX, centerY)
+
+	svg += `</svg>`
+	return svg
+}
