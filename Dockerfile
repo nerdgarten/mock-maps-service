@@ -23,6 +23,9 @@ WORKDIR /root/
 # Copy the binary from builder stage
 COPY --from=builder /app/main .
 
+# Copy the .env file
+COPY .env .
+
 # Expose the port
 EXPOSE 50051
 
