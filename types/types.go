@@ -132,6 +132,27 @@ type StaticMapRequest struct {
 	Size   string   `json:"size"`
 }
 
+// Marker represents a pin on the map
+type Marker struct {
+	Location Location `json:"location"`
+	Label    string   `json:"label,omitempty"`
+	Color    string   `json:"color,omitempty"`
+}
+
+// MapSVGRequest defines parameters for SVG map generation with markers
+type MapSVGRequest struct {
+	Center  Location `json:"center"`
+	Zoom    int32    `json:"zoom"`
+	Width   int32    `json:"width"`
+	Height  int32    `json:"height"`
+	Markers []Marker `json:"markers,omitempty"`
+}
+
+// MapSVGResponse contains the SVG content
+type MapSVGResponse struct {
+	SVG string `json:"svg"`
+}
+
 // ErrorResponse standardises error payloads returned by the service.
 type ErrorResponse struct {
 	Error string `json:"error"`

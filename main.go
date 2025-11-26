@@ -2,9 +2,9 @@ package main
 
 import (
 	"log"
-	"net/http"
 	"os"
 
+	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 	"github.com/nerdgarten/mock-maps/service/server"
 )
@@ -20,12 +20,12 @@ func main() {
 		port = "50051"
 	}
 
-	mux := http.NewServeMux()
-	server.NewMapsServer().RegisterRoutes(mux)
+	r := gin.Default()
+	server.NewMapsServer().RegisterRoutes(r)
 
 	addr := ":" + port
 	log.Printf("Mock Maps REST server listening on %s", addr)
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	if err := r.Run(addr); err != nil {
 		log.Fatalf("failed to start server: %v", err)
 	}
 }
